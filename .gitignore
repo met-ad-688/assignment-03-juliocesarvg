@@ -170,3 +170,21 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 lightcast_job_postings.csv
+
+# ****************************************************************************************************************
+/.quarto/
+**/*.quarto_ipynb
+.venv/
+data/
+figures/
+output/
+*.csv
+*.zip
+*.tgz
+*.svg
+*.png
+.vscode/
+.vscode-server/
+spark-*.tgz
+spark-*/
+*.deb
