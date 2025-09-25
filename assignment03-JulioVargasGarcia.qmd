@@ -72,8 +72,8 @@ df.show(5)
 df.count()
 ```
 
-# 1.1 Casting salary and experience columns
-### 1.1 Computing medians
+# Casting salary and experience columns (1)
+## Computing medians
 
 
 ```{python}
@@ -87,10 +87,10 @@ df = df.withColumn("SALARY", col("SALARY").cast("float")) \
        .withColumn("MIN_YEARS_EXPERIENCE", col("MIN_YEARS_EXPERIENCE").cast("float"))\
        .withColumn("MAX_YEARS_EXPERIENCE", col("MAX_YEARS_EXPERIENCE").cast("float"))
 #df.select("SALARY", "SALARY_FROM", "SALARY_TO", "MIN_YEARS_EXPERIENCE", "MAX_YEARS_EXPERIENCE").printSchema()
-#df.select("SALARY", "SALARY_FROM", "SALARY_TO", "MIN_YEARS_EXPERIENCE", "MAX_YEARS_EXPERIENCE").show(5)
+df.select("SALARY", "SALARY_FROM", "SALARY_TO", "MIN_YEARS_EXPERIENCE", "MAX_YEARS_EXPERIENCE").show(5)
 ```
 
-### 1.2 Computing medians
+## Computing medians
 
 ```{python}
 # 1.2 Computing medians
@@ -112,6 +112,8 @@ print("- Median SALARY_TO: $" + str(median_to))
 print("- Median SALARY: $" + str(median_salary))
 ```
 
+## Imputing missing salaries
+
 ```{python}
 # 1.3 Imputing missing salaries
 df = df.fillna({
@@ -130,6 +132,7 @@ export_cols = ["Average_Salary","SALARY","EDUCATION_LEVELS_NAME","REMOTE_TYPE_NA
 df.select(*export_cols).show(5, truncate=False)
 
 ```
+## Cleaning Education column
 
 ```{python}
 #1.4 Cleaning Education column
@@ -143,6 +146,7 @@ df1 = df.withColumn("EDUCATION_LEVELS_NAME",
 # 1.4 Output
 df1.select(*export_cols).show(5, truncate=False)
 ```
+## Exporting Cleaned Data
 
 ```{python}
 #1.5 Exporting Cleaned Data
@@ -154,7 +158,9 @@ pdf.to_csv("data/lightcast_cleaned.csv", index=False)
 print("Data cleaning complete. Rows retained:", len(pdf))
 ```
 
-# 2.0 TEMPLATE
+# Salary Distribution by Industry and Employment Type (2)
+
+## TEMPLATE
 
 ```{python}
 #| eval: true
@@ -196,7 +202,7 @@ pio.templates["nike"] = go.layout.Template(
 )
 ```
 
-## 2.1 Salary Distribution by Industry and Employment Type
+## Development of Question 2
 
 ```{python}
 #| eval: true
@@ -225,9 +231,6 @@ median_salaries_naics = pdf.groupby("NAICS2_NAME")["SALARY"].median()
 median_salaries_employee = pdf.groupby("EMPLOYMENT_TYPE_NAME")["SALARY"].median()
 display(median_salaries_naics.to_frame().head())
 display(median_salaries_employee.to_frame().head())
-
-
-
 
 
 ```
@@ -259,10 +262,15 @@ fig.update_layout(
 
 
 fig.show()
+fig.write_image("output/Q2.svg", width=1000, height=600, scale=1)
 ```
+## Explanation of Box Plot 2
 
-# 3 Salary Analysis by ONET Occupation Type (Bubble Chart)
+This box plot gives a quick view of how salaries vary by industry, each box is where most of the pay sits, and the line inside is the median. Those dots floating above are the really high-paying jobs.
+For example in the Information industry, most salaries bunch around 110 k, but you can also see some offers way higher than that, those are the outliers and this job is among the top salaries at about 500k.
 
+# Salary Analysis by ONET Occupation Type (Bubble Chart) (3)
+## Development of Question 3
 ```{python}
 import plotly.express as px
 #3.1 Analyze how salaries differ across LOT_OCCUPATION_NAME occupation types.
@@ -348,9 +356,13 @@ fig.write_image("output/Q3.svg", width=1000, height=600, scale=1)
 
 
 ```
+## Explanation of Box Plot 3
 
-# 4 Salary by Education Level
+This shows how salaries stack up by occupation. Each bubble is a job type, higher on the chart means a bigger median salary, we can see bigger bubbles which mean more job postings, and the color shows volume too.
+For example, Business Intelligence Analyst pay well and have tons of postings, while Market Research Analyst roles are smaller and pay less.
 
+# Salary by Education Level (4)
+## Development of Question 4
 ```{python}
 # Defining education level groupings
 lower_deg = ["Bachelor's", "Associate", "GED", "No Education Listed", "High school"]
@@ -388,7 +400,7 @@ display(pdf4.head())
 ```
 
 ```{python}
-# Jittering and trimming
+# Jittering / trimming
 df_pd["MAX_EXPERIENCE_JITTER"] = df_pd["MAX_YEARS_EXPERIENCE"] + np.random.uniform(-0.25, 0.25, size=len(df_pd))
 df_pd["AVERAGE_SALARY_JITTER"] = df_pd["Average_Salary"] + np.random.uniform(-2500, 2500, size=len(df_pd))
 df_pd = df_pd.round(2)
@@ -423,8 +435,8 @@ fig1.update_traces(
 )
 
 fig1.update_layout(
-    plot_bgcolor="#fcfcf0",   # light grey chart background
-    paper_bgcolor="#f5d9b2",  # soft blue frame
+    plot_bgcolor="#fcfcf0",
+    paper_bgcolor="#f5d9b2",
     font=dict(family="Segoe UI", size=14, color="#2b2b2b"),
     title_font=dict(size=22, color="#4b3832"),
     xaxis_title="Years of Experience",
@@ -435,17 +447,22 @@ fig1.update_layout(
     xaxis=dict(
         gridcolor="#e0e0e0",
         tickmode="linear",
-        dtick=1  # show every integer year clearly
+        dtick=1
     ),
     yaxis=dict(gridcolor="#cccccc")
 )
 
 fig1.show()
-fig1.write_html("output/q_1a_Experience_vs_Salary_by_Education_Level.html")
+fig.write_image("output/Q4.svg", width=1000, height=600, scale=1)
 ```
+## Explanation of Box Plot 4
 
-# 5 Salary by Remote Work Type
+This chart shows how pay changes with experience for two education levels.
+Blue dots are people with a bachelor s or lower, red dots are master’s or PhD. 
+We can see most salaries cluster under 200k no matter the experience, but a few outliers pop way higher.
 
+# Salary by Remote Work Type (5)
+## Development of Question 5
 ```{python}
 from pyspark.sql.functions import when, col, trim
 
@@ -474,7 +491,7 @@ df_pd = df.select(
 
 df_pd.head()
 
-# Jittering and trimming
+# Jittering / trimming
 df_pd["MAX_EXPERIENCE_JITTER"] = df_pd["MAX_YEARS_EXPERIENCE"] + np.random.uniform(-0.15, 0.15, size=len(df_pd))
 df_pd["AVERAGE_SALARY_JITTER"] = df_pd["Average_Salary"] + np.random.uniform(-1000, 1000, size=len(df_pd))
 df_pd = df_pd.round(2)
@@ -506,8 +523,8 @@ fig5.update_traces(
 )
 
 fig5.update_layout(
-    plot_bgcolor="#fcfcf0",   # light grey chart background
-    paper_bgcolor="#f5d9b2",  # soft blue frame
+    plot_bgcolor="#fcfcf0",   
+    paper_bgcolor="#f5d9b2",  
     font=dict(family="Segoe UI", size=14, color="#2b2b2b"),
     title_font=dict(size=22, color="#4b3832"),
     xaxis_title="Years of Experience",
@@ -518,11 +535,16 @@ fig5.update_layout(
     xaxis=dict(
         gridcolor="#e0e0e0",
         tickmode="linear",
-        dtick=1  # show every integer year clearly
+        dtick=1 
     ),
     yaxis=dict(gridcolor="#cccccc")
 )
 
 fig5.show()
+fig.write_image("output/Q5.svg", width=1000, height=600, scale=1)
 ```
 
+## Explanation of Box Plot 5
+
+This chart shows pay versus experience split by how people work — blue is onsite, red is remote, green is hybrid.
+Most salaries bunch under 200k no matter the setup, but you can spot a few high outliers across all three.
