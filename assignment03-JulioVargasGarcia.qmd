@@ -8,7 +8,7 @@ author:
         city: Boston
         state: MA
 number-sections: true
-date: '2025-09-23'
+date: '2025-09-21'
 format:
   html:
     theme: cerulean
@@ -19,11 +19,13 @@ format:
   pdf: default
 execute:
   eval: true
-  jupyter: python3  
+  jupyter: python3
   freeze: false
 date-modified: today
 date-format: long
+jupyter: python3
 ---
+
 
 ```{python}
 #| eval: true
@@ -67,106 +69,93 @@ df.createOrReplaceTempView("job_postings")
 # Show Schema and Sample Data
 #df.printSchema()  
 df.show(5)
+df.count()
 ```
+
+# 1.1 Casting salary and experience columns
+### 1.1 Computing medians
 
 
 ```{python}
-# Histogram of SALARY distribution (cast + filter)
-salary_df = (
-    df.select(col("SALARY").cast("float"))
-      .filter(col("SALARY").isNotNull() & (col("SALARY") > 0))
-)
+from pyspark.sql.functions import col, regexp_replace, trim
+# 1.1 Casting salary and experience columns
 
-fig = px.histogram(
-    salary_df.toPandas(),
-    x="SALARY",
-    nbins=50,
-    title="Salary Distribution"
-)
-fig.update_layout(bargap=0.1)
-fig
-```
-
-
-# Data Preparation
-
-```{python}
-# Step 1: Casting salary and experience columns
-from pyspark.sql.functions import col
 
 df = df.withColumn("SALARY", col("SALARY").cast("float")) \
        .withColumn("SALARY_FROM", col("SALARY_FROM").cast("float")) \
        .withColumn("SALARY_TO", col("SALARY_TO").cast("float")) \
        .withColumn("MIN_YEARS_EXPERIENCE", col("MIN_YEARS_EXPERIENCE").cast("float"))\
        .withColumn("MAX_YEARS_EXPERIENCE", col("MAX_YEARS_EXPERIENCE").cast("float"))
+#df.select("SALARY", "SALARY_FROM", "SALARY_TO", "MIN_YEARS_EXPERIENCE", "MAX_YEARS_EXPERIENCE").printSchema()
+#df.select("SALARY", "SALARY_FROM", "SALARY_TO", "MIN_YEARS_EXPERIENCE", "MAX_YEARS_EXPERIENCE").show(5)
+```
 
-# Step 2: Computing medians for salary columns
+### 1.2 Computing medians
+
+```{python}
+# 1.2 Computing medians
 def compute_median(sdf, col_name):
-    q = sdf.approxQuantile(col_name, [0.5], 0.01)
+    q = sdf.approxQuantile(col_name, [0.5], 0.01) #50 percentile 1% error
     return q[0] if q else None
 
 median_from = compute_median(df, "SALARY_FROM")
 median_to = compute_median(df, "SALARY_TO")
 median_salary = compute_median(df, "SALARY")
+```
 
-print("Medians:", median_from, median_to)
+```{python}
+# 1.2 Output
+#the median_from, median_to , median_salary respectively are:
 
-# Step 3: Imputing missing salaries, but not experience
+print("- Median SALARY_FROM: $" + str(median_from))
+print("- Median SALARY_TO: $" + str(median_to))
+print("- Median SALARY: $" + str(median_salary))
+```
+
+```{python}
+# 1.3 Imputing missing salaries
 df = df.fillna({
     "SALARY_FROM": median_from,
     "SALARY_TO": median_to,
     "SALARY": median_salary
 })
 
-# Step 5: Computing average salary
-df = df.withColumn("Average_Salary",
-                   (col("SALARY_FROM") + col("SALARY_TO")) / 2)
+# 1.3 Add new column Average_Salary
+df = df.withColumn("Average_Salary", (col("SALARY_FROM") + col("SALARY_TO")) / 2)
 
-# Step 6: Selecting required columns
-export_cols = [
-    "EDUCATION_LEVELS_NAME",
-    "REMOTE_TYPE_NAME",
-    "MAX_YEARS_EXPERIENCE",
-    "Average_Salary",
-    "SALARY",
-    "LOT_V6_SPECIALIZED_OCCUPATION_NAME"
-]
-df_selected = df.select(*export_cols)
+export_cols = ["Average_Salary","SALARY","EDUCATION_LEVELS_NAME","REMOTE_TYPE_NAME",
+          "MAX_YEARS_EXPERIENCE","LOT_V6_SPECIALIZED_OCCUPATION_NAME"]
 
-# Step 7: Saving to CSV
+# 1.3 Output
+df.select(*export_cols).show(5, truncate=False)
+
+```
+
+```{python}
+#1.4 Cleaning Education column
+#remove the \n and \r
+df1 = df.withColumn("EDUCATION_LEVELS_NAME",
+    trim(
+        regexp_replace(regexp_replace(col("EDUCATION_LEVELS_NAME"),r"\n|\r", ""), #remove \n and \r
+                      r"\[\s+\"", "[\"" ) #remove spaces.
+    )
+)
+# 1.4 Output
+df1.select(*export_cols).show(5, truncate=False)
+```
+
+```{python}
+#1.5 Exporting Cleaned Data
+# Export to CSV
+df_selected=df1.select(*export_cols)
 pdf = df_selected.toPandas()
 pdf.to_csv("data/lightcast_cleaned.csv", index=False)
 
 print("Data cleaning complete. Rows retained:", len(pdf))
 ```
 
+# 2.0 TEMPLATE
 
-## Salary Distribution by Industry and Employment Type
-- Compare salary variations across industries.
-
-**Filter the dataset**
-- Remove records where **salary is missing or zero**.
-
-**Aggregate Data**
-- Group by **NAICS industry codes** (e.g., `NAICS2_NAME`).
-- Group by **employment type** (`EMPLOYMENT_TYPE_NAME`) and compute salary distribution.
-- Calculate **salary percentiles** (25th, 50th, 75th) for each group.
-
-**Visualize results**
-- Create a **box plot** where:
-  - **X-axis** = `NAICS2_NAME`
-  - **Y-axis** = `SALARY_FROM`, or `SALARY_TO`, or `SALARY`
-  - **Group/color** = `EMPLOYMENT_TYPE_NAME`
-- Customize colors, fonts, and styles.
-
-**Explanation:** Write two sentences about what the graph reveals (e.g., median differences across industries and dispersion by employment type).
-
-
-
-
-
-
-# Set up plotly template
 ```{python}
 #| eval: true
 #| echo: true
@@ -176,25 +165,26 @@ import plotly.io as pio
 pio.templates["nike"] = go.layout.Template(
     # LAYOUT
     layout = {
-        # Fonts
-        # Note - 'family' must be a single string, NOT a list or dict!
+        # Fonts and colors
         'title': {
             'font': {'family': 'HelveticaNeue-CondensedBold, Helvetica, Sans-serif',
                      'size': 30,
-                     'color': '#13007c'} # 333
+                     'color': '#13007c'} 
         },
         'font': {'family': 'Helvetica Neue, Helvetica, Sans-serif',
                  'size': 16,
-                 'color': '#3b3b3b'}, # 333
+                 'color': '#3b3b3b'}, 
 
-        # Colorways ec7424
-        'colorway': ['#fffb00', '#e010fc'], # CC0000, a4adab
-        # Keep adding others as needed below
-        'hovermode': 'x unified'
+        'colorway': ['#fffb00', '#e010fc'], 
+        # Adding others
+        'hovermode': 'x unified',
+        'plot_bgcolor': '#E5ECF6',
+        'paper_bgcolor': "#FFFFFF",
+        
     },
     # DATA
     data = {
-        # Each graph object must be in a tuple or list for each trace
+        # Default style applied to all bar charts
         'bar': [go.Bar(
             texttemplate = '%{value:$.2s}',
             textposition = 'outside',
@@ -206,12 +196,7 @@ pio.templates["nike"] = go.layout.Template(
 )
 ```
 
-
-
-
-
-
-
+## 2.1 Salary Distribution by Industry and Employment Type
 
 ```{python}
 #| eval: true
@@ -221,211 +206,98 @@ import pandas as pd
 import polars as pl
 from IPython.display import display, HTML
 
-# Filter out missing or zero salary values
-pdf = df.filter(df["SALARY"] > 0).select("EMPLOYMENT_TYPE_NAME", "SALARY").toPandas()
+#2.2 Filter the dataset - Remove records where salary is missing or zero.
+df_valid_salaries = df.filter(df["SALARY"] > 0).select("NAICS2_NAME","EMPLOYMENT_TYPE_NAME", "SALARY")
 
+#2.2 output - convert to pandas
+pdf = df_valid_salaries.toPandas()
+print("Data cleaning complete. Rows retained:", len(pdf))
+
+#2.3 Aggregate data - NAICS industry codes, employment type and compute salary distribution.
 
 # Clean employment type names for better readability
-pdf["EMPLOYMENT_TYPE_NAME"] = (
-    pdf["EMPLOYMENT_TYPE_NAME"]
-      .astype(str)
-      .str.replace(r"[^\x00-\x7F]+", "", regex=True)
+pdf["EMPLOYMENT_TYPE_NAME"] = (pdf["EMPLOYMENT_TYPE_NAME"].astype(str)
+                               .str.replace(r"[^\x00-\x7F]+", "", regex=True)
 )
 
-#display(HTML(f"<div style='height:300px; overflow:auto'>{pdf.iloc[:10].to_html(index=False)}</div>"))
-
-# Compute median salary for sorting
-median_salaries = pdf.groupby("EMPLOYMENT_TYPE_NAME")["SALARY"].median()
-display(median_salaries.to_frame().head())
-
-
-# Sort employment types based on median salary in descending order
-sorted_employment_types = median_salaries.sort_values(ascending=False).index
-
-# Apply sorted categories
-pdf["EMPLOYMENT_TYPE_NAME"] = pd.Categorical(
-    pdf["EMPLOYMENT_TYPE_NAME"],
-    categories=sorted_employment_types,
-    ordered=True
-)
-
-# Create box plot with horizontal grid lines
-fig = px.box(
-    pdf,
-    x="EMPLOYMENT_TYPE_NAME",
-    y="SALARY",
-    title="Salary Distribution by Employment Type",
-    color_discrete_sequence=["#CC0000"],  # Single neutral color
-    boxmode="group",
-    points="all"  # Show all outliers
-)
-fig
+#2.3 output
+median_salaries_naics = pdf.groupby("NAICS2_NAME")["SALARY"].median()
+median_salaries_employee = pdf.groupby("EMPLOYMENT_TYPE_NAME")["SALARY"].median()
+display(median_salaries_naics.to_frame().head())
+display(median_salaries_employee.to_frame().head())
 
 
 
-# Improve layout, font styles, and axis labels
-fig.update_layout(
-    title=dict(
-        text="Salary Distribution by Employment Type",
-        font=dict(size=16, family="Helvetica", color="black")  # Bigger & Bold Title
-    ),
-    xaxis=dict(
-        title=dict(text="Employment Type", font=dict(size=14, family="Helvetica", color="black",weight="bold")),  # Bigger X-label
-        tickangle=0,  # Rotate X-axis labels for readability
-        tickfont=dict(size=12, family="Helvetica", color="black"),  # Bigger & Bold X-ticks
-        showline=True,  # Show axis lines
-        linewidth=2,    # Thicker axis lines
-        linecolor="black",
-        mirror=True,
-        showgrid=False,  # Remove vertical grid lines
-        categoryorder="array",
-        categoryarray=sorted_employment_types.tolist()
-    ),
-    yaxis=dict(
-        title=dict(text="Salary (in $1000)", font=dict(size=14, family="Helvetica", color="black",weight="bold")),  # Bigger Y-label
-        tickvals=[0, 50000, 100000, 150000, 200000, 250000, 300000, 350000, 400000, 450000, 500000],
-        ticktext=["0", "50", "100", "150", "200", "250", "300", "350", "400", "450", "500"],
-        tickfont=dict(size=12, family="Helvetica", color="black"),  # Bigger & Bold Y-ticks
-        showline=True,
-        linewidth=2,
-        linecolor="black",
-        mirror=True,
-        showgrid=True,       # Enable light horizontal grid lines
-        gridcolor="lightgray",  # Light shade for the horizontal grid
-        gridwidth=0.5        # Thin grid lines
-    ),
-    font=dict(family="Helvetica", size=12, color="black"),
-    boxgap=0.7,
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    showlegend=False,
-    height=500,
-    width=850
-)
-
-# Show & export
-fig.show()
-fig.write_html("output/Q1.html")
-fig.write_image("output/Q1.svg", width=850, height=500, scale=1)
 
 
 ```
-![](./figures/Q1.svg)
-<!-- # ![](./figures/Q1.svg) -->
-
-
-
-# Salary Distribution by Industry and Employment Type
-- Compare salary variations across industries.
-- **Filter the dataset**
-  - Remove records where **Salary is missing or zero**.
-- **Aggregate Data**
-  - Group by **NAICS industry codes**.
-  - Group by **employment type** and compute salary-distribution.
-- **Visualize results**
-  - Create a **box plot** where:
-    - **X-axis** = `NAICS2_NAME`.
-    - **Y-axis** = `SALARY_FROM`.
-    - Group by `EMPLOYMENT_TYPE_NAME`.
-  - Customize colors, fonts, and styles.
-- **Explanation:** Write two sentences about what the graph reveals.
 
 ```{python}
-#| eval: true
-#| echo: true
-#| fig-align: center
+#2.4 Visualize results  box plot 
+# X-axis = NAICS2_NAME || Y-axis = SALARY_FROM || Group by EMPLOYMENT_TYPE_NAME.
 pdf = df.select("NAICS2_NAME", "SALARY").toPandas()
 fig = px.box(pdf, x="NAICS2_NAME", y="SALARY", title="Salary Distribution by Industry",
              color_discrete_sequence=["#EF553B"])
                  # add nike template
-fig.update_layout(template="nike")
+#fig.update_layout(template="nike")
 
-fig.update_xaxes(tickangle=45)
-fig.show()
-```
+#fig.update_xaxes(tickangle=45)
 
-
-# Salary Analysis by ONET Occupation Type (Bubble Chart)
-- Analyze how salaries differ across ONET occupation types.
-- **Aggregate Data**
-  - Compute *median salary* for each occupation in the **ONET taxonomy**.
-- **Visualize results**
-  - Create a **bubble chart** where:
-    - **X-axis** = `ONET_NAME`
-    - **Y-axis** = `Median Salary`
-    - **Size** = Number of job postings
-  - Apply custom colors and font styles.
-- **Explanation:** Write two sentences about what the graph reveals.
-
-```{python}
-#| eval: true
-#| echo: true
-pdf = df.select("ONET_NAME", "SALARY", "ID").toPandas()
-
-df_onet = pdf.groupby(["ONET_NAME"]).agg({"SALARY": "median", "ID": "count"}).reset_index()
-fig = px.scatter(
-    df_onet,
-    x="ONET_NAME",
-    y="SALARY",
-    size="ID",
-    title="Salary Analysis by ONET Occupation",
-    color="ONET_NAME"
+fig.update_layout(
+    template="nike",
+    height=700,
+    xaxis=dict(
+        title=dict(text="NAICS2_NAME", standoff=40), 
+        tickangle=45,
+        tickfont=dict(size=10),
+        automargin=True
+    ),
+    yaxis=dict(title=dict(text="Salary")),
+    margin=dict(b=150)    
+        
 )
-fig.update_layout(font_family="Arial", title_font_size=16)
+
+
 fig.show()
 ```
 
-
-
-# Salary by Education Level
-- Create two groups:
-  - **Bachelor’s or lower** (Bachelor's, GED, Associate, No Education Listed)
-  - **Master’s or PhD** (Master's degree, Ph.D. or professional degree)
-- Plot scatter plots for each group using `MAX_YEARS_EXPERIENCE` (with jitter), `Average_Salary`, `LOT_V6_SPECIALIZED_OCCUPATION_NAME`.
-- Then, plot histograms overlaid with KDE curves for each group.
-  - This would generate two scatter plots and two histograms.
-- **After each graph, add a short explanation** of key insights.
-
-# Salary by Remote Work Type
-- Split into three groups based on `REMOTE_TYPE_NAME`:
-  - Remote
-  - Hybrid
-  - Onsite (includes `[None]` and blank)
-- Plot scatter plots for each group using `MAX_YEARS_EXPERIENCE` (with jitter), `Average_Salary`, `LOT_V6_SPECIALIZED_OCCUPATION_NAME`.
-- Also, create salary histograms for all three groups.
-- **After each graph, briefly describe any patterns or comparisons.**
-
-# Submission Instructions {.unnumbered}
-- Submit the Word Document (part of git repo) containing:
-  - The **HTTPS URL** of your GitHub repository.
-  - Answer to the questions.
-  - **Visualizations** created using matplotlib, Seaborn or plotly (preferred).
-  - Answers to the questions below.
+# 3 Salary Analysis by ONET Occupation Type (Bubble Chart)
 
 ```{python}
-#| eval: true
-#| echo: true
+import plotly.express as px
+#3.1 Analyze how salaries differ across LOT_OCCUPATION_NAME occupation types.
+#ONET_NAME CHANGE TO LOT_OCCUPATION_NAME
 
-# Step 1: Spark SQL - Median salary and job count per TITLE_NAME
+#Aggregate Data
+
 salary_analysis = spark.sql("""
     SELECT
-        LOT_OCCUPATION_NAME AS Occupation_name,
+        LOT_OCCUPATION_NAME AS Occupation_name, 
         PERCENTILE(SALARY, 0.5) AS Median_Salary,
         COUNT(*) AS Job_Postings
     FROM job_postings
+    WHERE LOT_OCCUPATION_NAME IS NOT NULL
     GROUP BY LOT_OCCUPATION_NAME
     ORDER BY Job_Postings DESC
     LIMIT 10
-""")
+""") #the result only has 6 results and a null, limit to 10 is not necessary
 
-# Step 2: Convert to Pandas DataFrame
 salary_pd = salary_analysis.toPandas()
-salary_pd.head()
+display(salary_pd.head())
 
+#Simple plot to Analyze
+figa = px.scatter(
+    salary_pd,
+    x="Occupation_name",
+    y="Median_Salary",
+    size="Job_Postings",
+    title="Salary Analysis by  Occupation",
+    color="Occupation_name"
+)
+figa.update_xaxes(tickangle=45, automargin=True)
+figa.show()
 
-
-# Step 3: Bubble chart using Plotly
-
+#3.2 Visualize results  bubble chart
 import plotly.express as px
 
 fig = px.scatter(
@@ -441,26 +313,27 @@ fig = px.scatter(
     },
     hover_name="Occupation_name",
     size_max=60,
-    width=1000,
+    width=900,
     height=600,
     color="Job_Postings",
     color_continuous_scale="Plasma"
 )
-
-
-
-# Step 4: Layout customization
+#customize layout
 fig.update_layout(
+    
+    height=700,
     font_family="Arial",
     font_size=14,
     title_font_size=25,
+    title_font_color="#13007c",
+    font_color="#2e2e2e", 
     xaxis_title="LOT Occupation",
     yaxis_title="Median Salary",
-    plot_bgcolor="white",
+    plot_bgcolor="#FAFDFF",
     xaxis=dict(
         tickangle=-45,
         showline=True,
-        linecolor="black"
+        linecolor="#444"
     ),
     yaxis=dict(
         showline=True,
@@ -468,21 +341,22 @@ fig.update_layout(
     )
 )
 
-# Step 5: Show and export
+
 fig.show()
-fig.write_image("output/Q7.svg", width=1000, height=600, scale=1)
+fig.write_image("output/Q3.svg", width=1000, height=600, scale=1)
+
 
 
 ```
 
-
+# 4 Salary by Education Level
 
 ```{python}
 # Defining education level groupings
 lower_deg = ["Bachelor's", "Associate", "GED", "No Education Listed", "High school"]
 higher_deg = ["Master's degree", "PhD or professional degree"]
 
-# Adding EDU_GROUP column
+# Adding new column EDU_GROUP 
 df = df.withColumn(
     "EDU_GROUP",
     when(col("EDUCATION_LEVELS_NAME").rlike("|".join([f"(?i){deg}" for deg in lower_deg])), "Bachelor's or lower")
@@ -490,22 +364,165 @@ df = df.withColumn(
     .otherwise("Other")
 )
 
-# Casting necessary columns to float
+# Modyfying/Casting necessary columns to float
 df = df.withColumn("MAX_YEARS_EXPERIENCE", col("MAX_YEARS_EXPERIENCE").cast("float"))
 df = df.withColumn("Average_Salary", col("Average_Salary").cast("float"))
 
+# df.select("MAX_YEARS_EXPERIENCE","Average_Salary","EDU_GROUP","EDUCATION_LEVELS_NAME").printSchema() #check schema changes
+
+# print(df.count()) #Total 72,498 after 8074
+
 # Filtering for non-null and positive values
 df = df.filter(
-    col("MAX_YEARS_EXPERIENCE").isNotNull() &
-    col("Average_Salary").isNotNull() &
-    (col("MAX_YEARS_EXPERIENCE") > 0) &
-    (col("Average_Salary") > 0)
+    col("MAX_YEARS_EXPERIENCE").isNotNull() & col("Average_Salary").isNotNull() &
+    (col("MAX_YEARS_EXPERIENCE") > 0) &  (col("Average_Salary") > 0)
 )
 
-# Filtering for just the two education groups
+# Filtering for just the two EDU_GROUP groups
 df_filtered = df.filter(col("EDU_GROUP").isin("Bachelor's or lower", "Master's or PhD"))
 
 # Converting to Pandas for plotting
 df_pd = df_filtered.toPandas()
+pdf4=df.select("MAX_YEARS_EXPERIENCE","Average_Salary","EDU_GROUP","EDUCATION_LEVELS_NAME").toPandas()
+display(pdf4.head())
+```
+
+```{python}
+# Jittering and trimming
+df_pd["MAX_EXPERIENCE_JITTER"] = df_pd["MAX_YEARS_EXPERIENCE"] + np.random.uniform(-0.25, 0.25, size=len(df_pd))
+df_pd["AVERAGE_SALARY_JITTER"] = df_pd["Average_Salary"] + np.random.uniform(-2500, 2500, size=len(df_pd))
+df_pd = df_pd.round(2)
+
+# Remove outlier higher than 399K
+df_pd = df_pd[df_pd["AVERAGE_SALARY_JITTER"] <= 399000]
+
 df_pd.head()
 ```
+
+```{python}
+#jittering and triming
+# Plot four groups
+fig1 = px.scatter(
+    df_pd,
+    x="MAX_EXPERIENCE_JITTER",
+    y="AVERAGE_SALARY_JITTER",
+    color="EDU_GROUP",
+    hover_data=["LOT_V6_SPECIALIZED_OCCUPATION_NAME"],
+    title="<b>Experience vs Salary by Education Level</b>",
+    opacity=1.0, #0.7
+    color_discrete_sequence=[
+        "#636EFA",  # Blue
+        "#EF553B",  # Red
+        "#00CC96",  # Green
+        "#AB63FA"   # Purple
+    ]
+)
+
+fig1.update_traces(
+    marker=dict(size=10, line=dict(width=1, color="black"))
+)
+
+fig1.update_layout(
+    plot_bgcolor="#fcfcf0",   # light grey chart background
+    paper_bgcolor="#f5d9b2",  # soft blue frame
+    font=dict(family="Segoe UI", size=14, color="#2b2b2b"),
+    title_font=dict(size=22, color="#4b3832"),
+    xaxis_title="Years of Experience",
+    yaxis_title="Average Salary (USD)",
+    legend_title="Education Group",
+    hoverlabel=dict(bgcolor="white", font_size=13, font_family="Arial"),
+    margin=dict(t=70, b=60, l=60, r=60),
+    xaxis=dict(
+        gridcolor="#e0e0e0",
+        tickmode="linear",
+        dtick=1  # show every integer year clearly
+    ),
+    yaxis=dict(gridcolor="#cccccc")
+)
+
+fig1.show()
+fig1.write_html("output/q_1a_Experience_vs_Salary_by_Education_Level.html")
+```
+
+# 5 Salary by Remote Work Type
+
+```{python}
+from pyspark.sql.functions import when, col, trim
+
+#5.1 Split into three groups based on REMOTE_TYPE_NAME
+df = df.withColumn(
+    "REMOTE_GROUP",
+    when(trim(col("REMOTE_TYPE_NAME")) == "Remote", "Remote")
+    .when(trim(col("REMOTE_TYPE_NAME")) == "Hybrid Remote", "Hybrid")
+    .when(trim(col("REMOTE_TYPE_NAME")) == "Not Remote", "Onsite")
+    .when(col("REMOTE_TYPE_NAME").isNull(), "Onsite")
+    .otherwise("Onsite")
+)
+
+#print(df.count())
+
+#5.1 Filter valid values
+df = df.filter(
+    col("MAX_YEARS_EXPERIENCE").isNotNull() & col("Average_Salary").isNotNull() &
+    (col("MAX_YEARS_EXPERIENCE") > 0) & (col("Average_Salary") > 0)
+)
+
+#5.1 Pandas
+df_pd = df.select(
+    "MAX_YEARS_EXPERIENCE","Average_Salary","LOT_V6_SPECIALIZED_OCCUPATION_NAME","REMOTE_GROUP"
+    ).toPandas()
+
+df_pd.head()
+
+# Jittering and trimming
+df_pd["MAX_EXPERIENCE_JITTER"] = df_pd["MAX_YEARS_EXPERIENCE"] + np.random.uniform(-0.15, 0.15, size=len(df_pd))
+df_pd["AVERAGE_SALARY_JITTER"] = df_pd["Average_Salary"] + np.random.uniform(-1000, 1000, size=len(df_pd))
+df_pd = df_pd.round(2)
+
+# Remove outlier higher than 399K
+df_pd = df_pd[df_pd["AVERAGE_SALARY_JITTER"] <= 399000]
+```
+
+```{python}
+# Plot four groups
+fig5 = px.scatter(
+    df_pd,
+    x="MAX_EXPERIENCE_JITTER",
+    y="AVERAGE_SALARY_JITTER",
+    color="REMOTE_GROUP",
+    hover_data=["LOT_V6_SPECIALIZED_OCCUPATION_NAME"],
+    title="<b>Experience vs Salary by Remote Work Type </b>",
+    opacity=1.0, #0.7
+    color_discrete_sequence=[
+        "#636EFA",  # Blue
+        "#EF553B",  # Red
+        "#00CC96",  # Green
+        "#AB63FA"   # Purple
+    ]
+)
+
+fig5.update_traces(
+    marker=dict(size=10, line=dict(width=1, color="black"))
+)
+
+fig5.update_layout(
+    plot_bgcolor="#fcfcf0",   # light grey chart background
+    paper_bgcolor="#f5d9b2",  # soft blue frame
+    font=dict(family="Segoe UI", size=14, color="#2b2b2b"),
+    title_font=dict(size=22, color="#4b3832"),
+    xaxis_title="Years of Experience",
+    yaxis_title="Average Salary (USD)",
+    legend_title="Education Group",
+    hoverlabel=dict(bgcolor="white", font_size=13, font_family="Arial"),
+    margin=dict(t=70, b=60, l=60, r=60),
+    xaxis=dict(
+        gridcolor="#e0e0e0",
+        tickmode="linear",
+        dtick=1  # show every integer year clearly
+    ),
+    yaxis=dict(gridcolor="#cccccc")
+)
+
+fig5.show()
+```
+
